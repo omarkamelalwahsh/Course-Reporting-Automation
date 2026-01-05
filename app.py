@@ -86,18 +86,9 @@ with st.sidebar:
 st.title("🎓 Zedny Smart Course Recommender")
 st.markdown("### 🔍 Find a Course")
 
-# Example Queries
-cols = st.columns([1, 1, 1, 1, 1, 4])
+# Initialize query input
 if "query_input" not in st.session_state:
     st.session_state["query_input"] = ""
-
-def set_q(txt): st.session_state["query_input"] = txt
-
-if cols[0].button("ML"): set_q("ML")
-if cols[1].button("NLP"): set_q("NLP")
-if cols[2].button("AWS"): set_q("AWS")
-if cols[3].button("Flutter"): set_q("Flutter")
-if cols[4].button("BI"): set_q("BI")
 
 query = st.text_input("What do you want to learn?", value=st.session_state["query_input"], placeholder="e.g. Python for Data Science")
 search_clicked = st.button("Get Recommendations", type="primary")

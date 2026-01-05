@@ -125,6 +125,13 @@ class CourseRecommender:
                 self.embeddings = np.load(emb_path)
                 with open(map_path, 'r') as f:
                     self.abbr_map = json.load(f)
+                
+                # Re-compute combined_text using the loaded map
+                # (This is needed because it's not persisted in the CSV cleanly or we want to ensure it matches the map)
+                self.courses_df['combined_text'] = self.courses_df.apply(
+                    lambda row: format_course_text(row, self.abbr_map), axis=1
+                )
+
                 # Ensure model is loaded for query encoding
                 self._initialize_model()
             else:
