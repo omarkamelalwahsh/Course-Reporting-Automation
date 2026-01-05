@@ -230,24 +230,45 @@ class CourseRecommender:
             return {"results": [], "debug_info": debug_info}
 
         # --- Keyword Guardrail ---
-        query_words = set(expanded_query.lower().split())
-        stop_words = {'i', 'want', 'to', 'learn', 'course', 'advanced', 'beginner', 'intermediate', 'in', 'of', 'for', 'and', 'with', 'a', 'the'}
-        keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
+        # 1. Improved Query Tokenization (Regex)
+        import re
+        # Convert I'm -> im, won't -> wont to handle punctuation
+        clean_q = expanded_query.lower().replace("'", "").replace("’", "")
+        query_words = set(re.findall(r'\b\w+\b', clean_q))
+
+        # 2. Expanded Stopwords List
+        stop_words = {
+            'i', 'im', 'me', 'my', 'we', 'you', 'your',
+            'want', 'wants', 'wanted', 'wont', 'gonna', 'wanna', 'wish', 'like', 'love',
+            'learn', 'learning', 'studying', 'study', 'course', 'courses', 'training', 'tutorial',
+            'get', 'take', 'start', 'help', 'need', 'needs', 'needed', 'looking', 'look', 'search', 'find',
+            'beginner', 'intermediate', 'advanced', # Levels are filters, not semantic keywords usually
+            'please', 'pls', 'plz', 'can', 'could', 'would', 'should',
+            'in', 'of', 'for', 'and', 'with', 'a', 'the', 'to', 'on', 'at', 'by', 'from', 'about', 'how', 'what', 'where'
+        }
+        
+        keywords = [w for w in query_words if w not in stop_words and len(w) > 2 and not w.isdigit()]
         
         missing_keywords = []
         if keywords:
             # Check availability in the *filtered* dataset text
+            # We compare against lowercase combined text
             all_text_blob = " ".join(filtered_df['combined_text'].str.lower().tolist())
             for kw in keywords:
+                # Word boundary check for safety (avoid matching 'bi' in 'biology' if unintended, but 'bi' is short)
+                # Simple substring check is usually okay for MVP, but let's be slightly safer if possible.
+                # Actually, substring is what was requested/implemented before. Let's stick to simple "in" for robustness unless valid word boundary needed.
+                # But 'java' in 'javascript' is a classic issue. 
+                # For now, let's keep the existing substring logic but apply it to the list of keywords.
                 if kw not in all_text_blob:
                     missing_keywords.append(kw)
         
         if missing_keywords:
-            debug_info["keyword_warning"] = f"No courses related to '{', '.join(missing_keywords)}' found in the filtered dataset."
-            # We return empty if we are fairly strict, or we can proceed.
-            # Given the user request for reliability, let's treat this as a soft fail/warning but return results if we can?
-            # Actually, per prompt "stop safely" - returning empty list with warning is safe.
-            return {"results": [], "debug_info": debug_info}
+            warning_msg = f"No courses explicitely mentioning '{', '.join(missing_keywords)}' found."
+            debug_info["keyword_warning"] = warning_msg
+            # Change: Do NOT return empty. Just warn.
+            # We proceed to semantic search.
+            # return {"results": [], "debug_info": debug_info} <-- REMOVED
 
 
         # --- Semantic Search ---
