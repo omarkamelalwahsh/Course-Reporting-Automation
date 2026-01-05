@@ -61,96 +61,95 @@ def get_dataset_hash(df: pd.DataFrame) -> str:
 
 def validate_and_clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Validate and auto-fix the dataset schema.
+    Validate and auto-fix the dataset schema for the Zedny dataset.
+    Columns: course_id, title, category, level, duration_hours, skills, description, instructor, cover
     """
     df = df.copy()
     
-    # 1. Normalize Column Names
-    # Common mappings
+    # 1. Normalize Column Names (if they differ from spec)
     col_map = {
         'id': 'course_id',
         'name': 'title',
         'course_name': 'title',
-        'duration': 'duration_hours',
-        'hours': 'duration_hours',
-        'skill': 'skills',
         'tags': 'skills',
-        'desc': 'description',
-        'content': 'description'
+        'desc': 'description'
     }
     df.rename(columns=lambda x: col_map.get(x.lower(), x), inplace=True)
     df.columns = [c.lower() for c in df.columns]
 
-    # Required columns
-    required_cols = ['course_id', 'title', 'category', 'level', 'duration_hours', 'skills', 'description']
-    
-    # 2. Add Missing Columns with Defaults
+    # Required columns and their defaults
+    # We handle course_id separately because it's a sequence
     if 'course_id' not in df.columns:
-        df['course_id'] = range(1, len(df) + 1)
+        df['course_id'] = list(range(1, len(df) + 1))
+    else:
+        df['course_id'] = df['course_id'].fillna(-1) # Placeholder or just leave as is if unique
+
+    defaults = {
+        'title': '',
+        'category': 'General',
+        'level': 'Beginner',
+        'duration_hours': 0.0,
+        'skills': '',
+        'description': '',
+        'instructor': 'Unknown',
+        'cover': ''
+    }
     
-    if 'category' not in df.columns:
-        df['category'] = 'General'
-        
-    if 'level' not in df.columns:
-        df['level'] = 'Beginner'
-        
-    if 'title' not in df.columns:
-        df['title'] = ''
-        
-    if 'description' not in df.columns:
-        df['description'] = ''
-        
-    if 'skills' not in df.columns:
-        df['skills'] = ''
+    for col, default in defaults.items():
+        if col not in df.columns:
+            df[col] = default
+        else:
+            df[col] = df[col].fillna(default)
+            if col == 'category':
+                df[col] = df[col].replace(['', 'nan'], 'General')
 
-    if 'duration_hours' not in df.columns:
-        df['duration_hours'] = 0.0
-
-    # 3. Clean 'level' column
+    # 2. Normalize 'level' strictly to Beginner / Intermediate / Advanced
     def normalize_level(val):
         val = str(val).lower()
         if any(x in val for x in ['beg', 'jun', 'intro', 'start']):
             return 'Beginner'
         if any(x in val for x in ['adv', 'exp', 'sen', 'deep', 'mast']):
             return 'Advanced'
-        return 'Intermediate' # Default for others like 'intermediate', 'med', etc.
+        if any(x in val for x in ['inter', 'med', 'mid']):
+            return 'Intermediate'
+        return 'Intermediate' # Default for ambiguous cases
 
-    df['level'] = df['level'].fillna('Beginner').apply(normalize_level)
+    df['level'] = df['level'].apply(normalize_level)
 
-    # 4. Clean 'duration_hours'
+    # 3. Clean 'duration_hours'
     def extract_hours(val):
-        if pd.isna(val): 
-            return None
-        # Extract number from string like "40 hours"
+        if pd.isna(val) or val == '': 
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val)
         match = re.search(r"(\d+(\.\d+)?)", str(val))
         if match:
             return float(match.group(1))
-        return None
+        return 0.0
 
     df['duration_hours'] = df['duration_hours'].apply(extract_hours)
-    # Fill missing duration with median
-    median_dur = df['duration_hours'].median()
-    if pd.isna(median_dur): median_dur = 10.0
-    df['duration_hours'] = df['duration_hours'].fillna(median_dur)
 
-    # 5. Clean 'skills'
-    # Ensure string and separated by |
-    def clean_skills(val):
-        if pd.isna(val): return ""
-        val = str(val)
-        # Replace commas with |
-        val = val.replace(",", "|")
-        return val
+    # 4. Auto Skill Extraction if empty
+    def extract_skills(row):
+        skills = str(row['skills']).strip()
+        if not skills or skills.lower() == 'nan':
+            # Simple keyword extraction from title and description
+            text = f"{row['title']} {row['description']}"
+            tech_keywords = {
+                'python', 'javascript', 'js', 'react', 'node', 'sql', 'html', 'css', 
+                'java', 'c#', 'php', 'laravel', 'flutter', 'aws', 'azure', 'docker',
+                'kubernetes', 'ml', 'ai', 'data science', 'marketing', 'sales',
+                'excel', 'word', 'powerpoint', 'accounting', 'scrum', 'agile', 'wordpress'
+            }
+            extracted = set()
+            words = re.findall(r'\b\w+\b', text.lower())
+            for word in words:
+                if word in tech_keywords:
+                    extracted.add(word.capitalize())
+            return "|".join(list(extracted)) if extracted else "General"
+        return str(skills).replace(",", "|")
 
-    df['skills'] = df['skills'].apply(clean_skills)
-    
-    # 6. Fill missing text
-    df['title'] = df['title'].fillna("")
-    df['description'] = df['description'].fillna("")
-    df['category'] = df['category'].fillna("General")
-    
-    # Ensure all required cols exist effectively now (we created them if missing)
-    # Just select them to keep frame clean, + any others? No, lets keep others if user added them
+    df['skills'] = df.apply(extract_skills, axis=1)
     
     return df
 
@@ -158,109 +157,78 @@ def validate_and_clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
 def build_abbreviation_map(df: pd.DataFrame) -> Dict[str, str]:
     """
     Build abbreviation map automatically from dataset.
-    Scans for:
-    1. "Full Name (ABBR)" pattern
-    2. "ABBR (Full Name)" pattern
-    3. Acronyms in Skills (e.g. NLP -> "n l p")
+    Includes base tech mapping plus extracted patterns.
     """
-    abbr_map = {}
+    # Base mapping
+    abbr_map = {
+        'ml': 'machine learning',
+        'dl': 'deep learning',
+        'js': 'javascript',
+        'nlp': 'natural language processing',
+        'cv': 'computer vision',
+        'ui/ux': 'user interface / user experience',
+        'pm': 'project management',
+        'bi': 'business intelligence'
+    }
     
-    # Helper to clean text
+    # helper to clean
     def clean(text):
-        return re.sub(r'[^a-zA-Z0-9\s]', '', str(text).lower())
+        return re.sub(r'[^a-zA-Z0-9\s/]', '', str(text).lower()).strip()
 
-    # 1. Regex for "Full Form (ABBR)" or "ABBR (Full Form)"
-    # We look for something inside parens that is short (2-6 chars) and uppercase
-    # And something outside that matches the letters
-    
-    # Simple Heuristic: Look for (XYZ) where XYZ is uppercase
+    # Regex for "Full Form (ABBR)" pattern
     pattern = re.compile(r'\((?P<abbr>[A-Z0-9]{2,6})\)')
     
     text_cols = ['title', 'description']
     for col in text_cols:
         if col not in df.columns: continue
-        
         for text in df[col].dropna():
-            matches = pattern.finditer(str(text))
-            for m in matches:
+            for m in pattern.finditer(str(text)):
                 abbr = m.group('abbr').lower()
-                # Try to find full form before it? 
-                # This is hard to do perfectly safely. 
-                # For this task, we can just say: if we see (NLP), we map nlp -> "natural language processing" 
-                # IF "Natural Language Processing" is immediately preceding.
-                # However, the user asked to "Extract patterns".
-                # A simpler robust way:
-                # Capture the abbreviation. Map it to the whole string? No.
-                
-                # Let's try: "Natural Language Processing (NLP)"
-                # We can grab X words before (NLP) where X is len(abbr).
-                # Example: NLP = 3 chars. Check 3 words before.
-                
                 span_end = m.start()
                 pre_text = str(text)[:span_end].strip()
                 words = pre_text.split()
                 if len(words) >= len(abbr):
                     potential_full = " ".join(words[-len(abbr):])
-                    # Check if initials match
-                    initials = "".join([w[0] for w in words[-len(abbr):]]).lower()
+                    initials = "".join([w[0] for w in words[-len(abbr):] if w]).lower()
                     if initials == abbr:
-                       abbr_map[abbr] = clean(potential_full) + " " + abbr
+                       abbr_map[abbr] = clean(potential_full)
 
-    # 2. Skill Acronyms
-    # "Additionally, for any acronym detected in skills (2–8 uppercase/digits...)"
-    # "map it to: 'abbr spaced-acronym'"
-    if 'skills' in df.columns:
-        for skills in df['skills'].dropna():
-            # Split by | or ,
-            tokens = re.split(r'[|;,]', str(skills))
-            for token in tokens:
-                token = token.strip()
-                # Check if it is an acronym (all upper, 2-8 chars)
-                if token.isupper() and 2 <= len(token) <= 8:
-                    lowered = token.lower()
-                    spaced = " ".join(list(lowered)) # nlp -> n l p
-                    # If not already defined by Full Form extraction
-                    if lowered not in abbr_map:
-                         abbr_map[lowered] = f"{lowered} {spaced}"
-    
     return abbr_map
 
 
 def expand_query(query: str, abbr_map: Dict[str, str]) -> str:
     """
-    Expand abbreviations in user query using the map.
+    Expand user query automatically using the mapping.
+    Ensures both full words and abbreviations match (query contains both).
     """
-    tokens = query.lower().split()
-    expanded_tokens = []
+    query_lower = query.lower()
+    expanded = query_lower
     
-    for token in tokens:
-        # Strip simple punctuation for matching
-        clean_token = re.sub(r'\W+', '', token)
-        if clean_token in abbr_map:
-            expanded_tokens.append(abbr_map[clean_token])
-        else:
-            expanded_tokens.append(token)
+    # We want "ML" -> "ML machine learning" so both match
+    for abbr, full in abbr_map.items():
+        # Match only whole words
+        pattern = r'\b' + re.escape(abbr) + r'\b'
+        if re.search(pattern, expanded):
+            # Replace with "abbr full"
+            expanded = re.sub(pattern, f"{abbr} {full}", expanded)
             
-    return " ".join(expanded_tokens)
+    return expanded
 
 
 def format_course_text(row: pd.Series, abbr_map: Dict[str, str] = None) -> str:
     """
     Format course information into a single text for embedding.
-    Includes abbreviation expansion if map provided.
     """
-    base_text = f"{row['title']}. Skills: {row['skills']}. {row['description']}"
-    if abbr_map:
-        return expand_query(base_text, abbr_map)
-    return base_text
+    text = f"{row['title']} {row['category']} {row['level']} {row['skills']} {row['description']}"
+    return text.lower()
 
 
 def load_courses(csv_path: str) -> pd.DataFrame:
     """
-    Load and validate courses from CSV file.
+    Load data/courses.csv automatically.
     """
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Courses file not found: {csv_path}")
+        raise FileNotFoundError(f"Dataset missing at {csv_path}")
     
     df = pd.read_csv(csv_path)
     return validate_and_clean_dataset(df)
