@@ -1,5 +1,7 @@
 ﻿# 🎓 Zedny Smart Course Recommender
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://course-recommender-nguwc5gsetcqywddjhrwxm.streamlit.app)
+
 ## Executive Summary
 
 **Zedny Smart Course Recommender** is an Intelligent, Zero-Config Search Engine designed to help students find the right courses instantly. It goes beyond simple keywords by understanding the *meaning* of what you want to learn.
