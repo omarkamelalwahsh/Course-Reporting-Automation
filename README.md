@@ -1,100 +1,92 @@
-﻿# 🎓 Zedny Smart Course Recommender (v2.0 - Sellable)
+﻿# 🎓 Zedny Smart Course Recommender
 
 ## Executive Summary
 
-### Product Vision
+**Zedny Smart Course Recommender** is an Intelligent, Zero-Config Search Engine designed to help students find the right courses instantly. It goes beyond simple keywords by understanding the *meaning* of what you want to learn.
 
-Transforming from a hardcoded prototype to a **dataset-agnostic** product. Any user or organization can now upload their course catalog (CSV), and the AI automatically adapts, validates the schema, and builds a custom semantic search engine in seconds.
+**Current Status**: `v2.1 (Fully Automatic)`
 
-### Key Innovations
+- **Live Deployment Ready**
+- **Zero-Touch Startup**: No manual upload needed; just run and search.
+- **Self-Healing**: Automatically fixes data schema issues.
+- **Smart & Fast**: Caches AI models for instant performance.
 
-1. **Plug & Play Data**: Upload your own courses; the system auto-fixes missing columns and normalizes data.
-2. **Zero-Config Domain Adaptation**:
-    - Automatically learns abbreviations (e.g., "NLP" -> "Natural Language Processing") from the dataset.
-    - No manual dictionary maintenance required.
-3. **Performance Caching**: Embeddings are computed once per uniqueness hash and saved to disk. Reloads are instant.
-4. **Optimized Resource Usage**: The AI model is loaded into memory only once per server instance, ensuring fast multi-user support in Streamlit.
+---
 
-## Features
+## 📖 Full Documentation
 
-- **📂 Bring Your Own Data**:
-  - Upload CSV via sidebar.
-  - **Auto-Validation**: Fixes schema issues, fills missing values, normalizes levels (Beginner/Intermediate/Advanced).
-  - **Smart Fallback**: Uses a default dataset if no file is provided.
-- **🚀 Advanced Search Engine**:
-  - **Semantic Search**: Understands "machine learning" matches "AI" or "deep learning".
-  - **Pre-Filtering**: Hard SQL-like filters for Level, Category, and Duration.
-  - **Post-Filtering**: Instant UI refinement of results.
-- **🧠 Auto-Intelligence**:
-  - **Abbreviation Extraction**: Scans text and skills to map acronyms (e.g., `AWS` -> `aws a w s`, `BI` -> `business intelligence`).
-  - **Level Detection**: Auto-detects "Advanced" queries.
-- **🛡️ Guardrails**:
-  - Dataset size warnings (>5000 rows).
-  - keyword warnings ('Flutter' query but no 'Flutter' in filtered data).
+For a deep dive into the Architecture, AI Model, and Customization, please read the **[Technical Documentation](DOCUMENTATION.md)**.
+
+---
+
+## Key Features
+
+### 🚀 Smart AI Engine
+
+- **Semantic Search**: Understands that "ML" = "Machine Learning" and "coding" = "Programming".
+- **Auto-Learning**: Automatically detects acronyms in your dataset (e.g., `NLP`, `AWS`) and learns their full forms without you doing anything.
+- **Accuracy Guardrails**: Smartly filters out irrelevant results and warns you if your query has no match in the database.
+
+### ⚡ Automatic & Fast
+
+- **Pre-Cached Models**: The heavy AI brain is loaded once; subsequent searches are milliseconds fast.
+- **Data Caching**: Dataset embeddings are saved to disk (`outputs/`) so the app starts up instantly after the first run.
+- **Error Handling**: Gracefully handles single results or empty searches with clear, helpful messages.
+
+### 🎛️ Precision Filtering
+
+1. **Level & Category Filters**: Narrow down by difficulty or topic *before* searching.
+2. **Duration Control**: Filter out courses that are too long or too short.
+3. **Post-Refinement**: Tweak the results list instantly with UI sliders.
+
+---
 
 ## How to Run
 
-### prerequisites
+### 1. Installation
 
-- Python 3.8+
-- pip
-
-### Installation
+Ensure you have Python 3.8+ installed.
 
 ```bash
-# Install dependencies
+git clone https://github.com/omarkamelalwahsh/course-recommender.git
+cd course-recommender
 pip install -r requirements.txt
 ```
 
-### Run the Application
+### 2. Run the App
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`. Since the model is cached via `@st.cache_resource`, the first run downloads/loads the model, and subsequent refreshes are instant.
+The app will open automatically in your browser at `http://localhost:8501`.
+
+---
 
 ## Usage Guide
 
-1. **Upload Dataset (Optional)**:
-    - Use the sidebar file uploader.
-    - Preview the parsed data and check for validation warnings.
-2. **Configure Search**:
-    - Type a query or click an Example Query button (e.g., "ML", "AWS").
-    - Select Pre-Filters (Level, Category).
-3. **Analyze Results**:
-    - View the top semantic matches.
-    - See the **Relevance Fit (0-10)**.
-    - Use Post-Filters to narrow down the list further.
+1. **Search**: Just type what you want (e.g., "Python for data science" or "web dev").
+2. **Filter**: Use the sidebar to set your level (Beginner/Advanced) or Category.
+3. **Refine**: If you get too many results, use the sliders below the search bar to narrow them down.
+
+*Note: If you search for something completely unrelated (e.g., "Cooking"), the system will show an error indicating that no matching content exists.*
+
+---
 
 ## Project Structure
 
 ```
 zedny-course-recommender/
-├── app.py                      # UI, Model Caching, Search Logic
-├── src/
-│   ├── recommender.py          # Core Engine (Hybrid Search, Embeddings)
-│   ├── utils.py                # Validation, Cleaning, Abbreviation Extraction, Hashing
+├── app.py                      # Main Application Entry Point
+├── DOCUMENTATION.md            # Detailed Technical Docs
+├── requirements.txt            # Python Dependencies
 ├── data/
-│   └── courses.csv             # Default Dataset
-├── outputs/                    # Cached Embeddings, Maps, and Logs (Auto-generated)
-├── requirements.txt            # Dependencies
-└── README.md                   # Documentation
+│   └── courses.csv             # The Course Dataset
+├── src/
+│   ├── recommender.py          # AI Engine & Logic
+│   └── utils.py                # Data Processing & Caching
+└── outputs/                    # Auto-generated cache files
 ```
-
-## Technical Details
-
-### Performance Optimization
-
-- **Model Caching**: `streamlit.cache_resource` ensures the 90MB BERT model is loaded only once across sessions.
-- **Embedding Caching**: MD5 hash of the dataset content is used to key cached `.npy` files.
-- **Vector Operations**: Uses `numpy` and `scikit-learn` for fast cosine similarity blocking.
-
-### Schema auto-fix Rules
-
-- **Missing Columns**: Created with default values (Category="General", Level="Beginner").
-- **Level Normalization**: distinct values like 'jun', 'intro' -> 'Beginner'; 'expert', 'deep' -> 'Advanced'.
-- **Duration**: Extracted regex `(\d+)` from strings.
 
 ## License
 
