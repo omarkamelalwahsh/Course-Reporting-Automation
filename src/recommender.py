@@ -1,7 +1,8 @@
 ﻿import os
+import json
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Union
 try:
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity
@@ -9,17 +10,30 @@ except ImportError:
     SentenceTransformer = None
     cosine_similarity = None
 
-from src.utils import load_courses, format_course_text
+from src.utils import (
+    load_courses, 
+    format_course_text, 
+    validate_and_clean_dataset,
+    build_abbreviation_map,
+    get_dataset_hash,
+    expand_query
+)
 
 class CourseRecommender:
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', model: Any = None):
         """
         Initialize the Course Recommender system.
+        
+        Args:
+            model_name: Name of the model to load if not provided.
+            model: Optional pre-loaded SentenceTransformer model.
         """
         self.model_name = model_name
-        self.model = None
+        self.model = model
         self.courses_df = None
         self.embeddings = None
+        self.abbr_map = {}
+        self.dataset_hash = None
         
         # Fallback data
         self.fallback_data = [
@@ -38,8 +52,8 @@ class CourseRecommender:
                 "category": "Data Science",
                 "level": "Advanced",
                 "duration_hours": 25.0,
-                "skills": "Deep Learning, Neural Networks, TensorFlow",
-                "description": "Master advanced ML concepts and frameworks."
+                "skills": "Deep Learning, Neural Networks, TensorFlow, NLP",
+                "description": "Master advanced ML concepts and frameworks including Natural Language Processing (NLP)."
             },
             {
                 "course_id": 3,
@@ -77,19 +91,68 @@ class CourseRecommender:
             self.model = SentenceTransformer(self.model_name)
             print("Model loaded.")
 
-    def load_courses(self, csv_path: str) -> None:
+    def load_courses(self, source: Union[str, pd.DataFrame]) -> None:
         """
-        Load courses from CSV or fallback.
+        Load courses from CSV path or DataFrame with caching support.
         """
         try:
-            print(f"Attempting to load courses from {csv_path}...")
-            self.courses_df = load_courses(csv_path)
-            print(f"Loaded {len(self.courses_df)} courses from CSV.")
+            # 1. Load and Clean Data
+            if isinstance(source, pd.DataFrame):
+                print("Loading courses from DataFrame...")
+                self.courses_df = validate_and_clean_dataset(source)
+            else:
+                print(f"Loading courses from {source}...")
+                if os.path.exists(source):
+                    raw_df = pd.read_csv(source)
+                    self.courses_df = validate_and_clean_dataset(raw_df)
+                else:
+                    raise FileNotFoundError(f"File not found: {source}")
+            
+            # 2. Compute Hash
+            self.dataset_hash = get_dataset_hash(self.courses_df)
+            print(f"Dataset Hash: {self.dataset_hash}")
+            
+            # 3. Check Cache
+            cache_dir = "outputs"
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            emb_path = os.path.join(cache_dir, f"embeddings_{self.dataset_hash}.npy")
+            map_path = os.path.join(cache_dir, f"abbr_map_{self.dataset_hash}.json")
+            data_path = os.path.join(cache_dir, f"courses_{self.dataset_hash}.csv")
+            
+            if os.path.exists(emb_path) and os.path.exists(map_path):
+                print("Found cached embeddings and map. Loading...")
+                self.embeddings = np.load(emb_path)
+                with open(map_path, 'r') as f:
+                    self.abbr_map = json.load(f)
+                # Ensure model is loaded for query encoding
+                self._initialize_model()
+            else:
+                print("No cache found. Computing embeddings and map...")
+                # Build Abbreviation Map
+                self.abbr_map = build_abbreviation_map(self.courses_df)
+                
+                # Compute Embeddings
+                self._compute_embeddings()
+                
+                # Save Cache
+                if self.embeddings is not None:
+                    np.save(emb_path, self.embeddings)
+                    print(f"Saved embeddings to {emb_path}")
+                
+                with open(map_path, 'w') as f:
+                    json.dump(self.abbr_map, f)
+                    print(f"Saved abbreviation map to {map_path}")
+                    
+                self.courses_df.to_csv(data_path, index=False)
+                print(f"Saved cleaned dataset to {data_path}")
+                
         except Exception as e:
-            print(f"Warning: Could not load CSV ({e}). Using fallback data.")
-            self.courses_df = pd.DataFrame(self.fallback_data)
-        
-        self._compute_embeddings()
+            print(f"Error loading courses: {e}. Using fallback data.")
+            self.courses_df = validate_and_clean_dataset(pd.DataFrame(self.fallback_data))
+            # Even for fallback, we need to init model and simple embeddings
+            self.abbr_map = build_abbreviation_map(self.courses_df)
+            self._compute_embeddings()
 
     def _compute_embeddings(self) -> None:
         """Compute embeddings for all courses."""
@@ -97,7 +160,10 @@ class CourseRecommender:
             print("No courses to embed.")
             return
 
-        self.courses_df['combined_text'] = self.courses_df.apply(format_course_text, axis=1)
+        # Use format_course_text with the abbreviation map
+        self.courses_df['combined_text'] = self.courses_df.apply(
+            lambda row: format_course_text(row, self.abbr_map), axis=1
+        )
         
         self._initialize_model()
         
@@ -117,15 +183,14 @@ class CourseRecommender:
     ) -> Dict[str, Any]:
         """
         Get course recommendations with pre-filtering, similarity threshold, and debug info.
-        
-        Returns:
-            Dict containing 'results' (List) and 'debug_info' (Dict)
         """
         if self.courses_df is None:
+            # Try loading default if not loaded
             self.load_courses("data/courses.csv")
 
         debug_info = {
             "query": user_query,
+            "expanded_query": user_query, # To show expansion
             "pre_filter_count": 0,
             "total_courses": len(self.courses_df) if self.courses_df is not None else 0,
             "top_raw_scores": [],
@@ -134,6 +199,10 @@ class CourseRecommender:
 
         if not user_query.strip():
             return {"results": [], "debug_info": debug_info}
+            
+        # --- 0. Expand Query ---
+        expanded_query = expand_query(user_query, self.abbr_map)
+        debug_info["expanded_query"] = expanded_query
 
         # --- 1. Apply Pre-Run Hard Filters ---
         filtered_df = self.courses_df.copy()
@@ -154,11 +223,8 @@ class CourseRecommender:
             return {"results": [], "debug_info": debug_info}
 
         # --- Keyword Guardrail ---
-        # Heuristic: Check if specific strong keywords in query are totally missing from filtered dataset
-        # This helps with "I want to learn Flutter" -> returns nothing if Flutter not in dataset
-        query_words = set(user_query.lower().split())
-        # Remove common stop words (very basic list)
-        stop_words = {'i', 'want', 'to', 'learn', 'course', 'advanced', 'beginner', 'intermediate', 'in', 'of', 'for', 'and', 'with'}
+        query_words = set(expanded_query.lower().split())
+        stop_words = {'i', 'want', 'to', 'learn', 'course', 'advanced', 'beginner', 'intermediate', 'in', 'of', 'for', 'and', 'with', 'a', 'the'}
         keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
         
         missing_keywords = []
@@ -171,9 +237,9 @@ class CourseRecommender:
         
         if missing_keywords:
             debug_info["keyword_warning"] = f"No courses related to '{', '.join(missing_keywords)}' found in the filtered dataset."
-            # If a strong keyword is missing, we might want to return empty immediately or warn?
-            # User request: "If the query contains a strong keyword ... and none ... exist ... show a warning"
-            # It implies we shouldn't show garbage.
+            # We return empty if we are fairly strict, or we can proceed.
+            # Given the user request for reliability, let's treat this as a soft fail/warning but return results if we can?
+            # Actually, per prompt "stop safely" - returning empty list with warning is safe.
             return {"results": [], "debug_info": debug_info}
 
 
@@ -182,8 +248,8 @@ class CourseRecommender:
         results = []
         
         if self.model and self.embeddings is not None and len(self.embeddings) == len(self.courses_df):
-            # 1. Compute Query Embedding (Freshly computed, no caching)
-            query_embedding = self.model.encode([user_query])
+            # 1. Compute Query Embedding (Freshly computed)
+            query_embedding = self.model.encode([expanded_query])
             
             # 2. Slice Embeddings
             subset_embeddings = self.embeddings[current_indices]
@@ -192,34 +258,22 @@ class CourseRecommender:
             similarities = cosine_similarity(query_embedding, subset_embeddings)[0]
             
             # 4. Filter by Threshold
-            # We only care about indices where score >= threshold
-            # Mapping back to the subset index
             valid_mask = similarities >= similarity_threshold
             
             if not np.any(valid_mask):
-                # No results pass threshold
-                # Add top scores to debug anyway for visibility
                 top_debug_indices = np.argsort(similarities)[::-1][:5]
                 debug_info["top_raw_scores"] = similarities[top_debug_indices].tolist()
                 return {"results": [], "debug_info": debug_info}
             
-            # Filter similarities and indices
             filtered_similarities = similarities[valid_mask]
-            # Get original indices (subset indices) that are valid
-            # valid_mask is boolean array of shape (subset_len,)
-            # We need the indices of True values
             valid_subset_indices = np.where(valid_mask)[0]
             
             # Sort valid ones
-            # argsort sorts ascending, so we flip
             sorted_local_indices = valid_subset_indices[np.argsort(filtered_similarities)[::-1]]
             
             # Additional capping by top_k
             top_local_indices = sorted_local_indices[:top_k]
             
-            # Get final scores
-            # To get scores, we need to index into filtered_similarities? 
-            # Easier: use subset_embeddings indices
             final_subset_scores = []
             for local_idx in top_local_indices:
                 final_subset_scores.append(similarities[local_idx])
@@ -234,13 +288,12 @@ class CourseRecommender:
             max_score = np.max(final_subset_scores) if len(final_subset_scores) > 0 else 1.0
             
             for local_idx, score in zip(top_local_indices, final_subset_scores):
-                # Retrieve actual course using iloc on filtered_df
                 course = filtered_df.iloc[local_idx].to_dict()
                 course['similarity_score'] = float(score)
                 
                 # Integer Rank Calculation
                 if max_score == min_score:
-                    rank = 5
+                    rank = 10 # If all same and valid, give 10
                 else:
                     rank = round(((score - min_score) / (max_score - min_score)) * 10)
                 
@@ -250,14 +303,12 @@ class CourseRecommender:
         else:
             # Fallback: Keyword matching
             print("Using keyword matching fallback.")
-            query_lower = user_query.lower()
+            query_lower = expanded_query.lower()
             
             def keyword_score(text):
                 return sum(1 for word in query_lower.split() if word in str(text).lower())
             
             scores = filtered_df['combined_text'].apply(keyword_score)
-            
-            # Threshold for keywords: Must have at least 1 match
             scores = scores[scores > 0]
             
             if scores.empty:
@@ -265,7 +316,6 @@ class CourseRecommender:
 
             top_indices = scores.nlargest(top_k).index 
             
-            # Debug info
             debug_info["top_raw_scores"] = scores.nlargest(5).tolist()
 
             subset_scores = scores[top_indices]
@@ -278,7 +328,7 @@ class CourseRecommender:
                 course['similarity_score'] = float(score)
                 
                 if max_score == min_score:
-                    rank = 5
+                    rank = 10
                 else:
                     rank = round(((score - min_score) / (max_score - min_score)) * 10)
                 

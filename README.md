@@ -1,39 +1,40 @@
-﻿# 🎓 Zedny Smart Course Recommender
+﻿# 🎓 Zedny Smart Course Recommender (v2.0 - Sellable)
 
 ## Executive Summary
 
-### Business Context
+### Product Vision
 
-In the rapidly growing E-Learning market, learners face **information overload**. Traditional keyword search often fails to understand **semantic intent**. This AI-powered system solves this by:
+Transforming from a hardcoded prototype to a **dataset-agnostic** product. Any user or organization can now upload their course catalog (CSV), and the AI automatically adapts, validates the schema, and builds a custom semantic search engine in seconds.
 
-1. **Understanding Intent**: Using Sentence Transformers for semantic search.
-2. **Ensuring Relevance**: Using hard pre-filters and keyword guardrails to prevent hallucinations.
-3. **Interactive Exploration**: Allowing 2-stage filtering (Pre-search & Post-search) for maximum control.
+### Key Innovations
 
-### AI Solution
+1. **Plug & Play Data**: Upload your own courses; the system auto-fixes missing columns and normalizes data.
+2. **Zero-Config Domain Adaptation**:
+    - Automatically learns abbreviations (e.g., "NLP" -> "Natural Language Processing") from the dataset.
+    - No manual dictionary maintenance required.
+3. **Performance Caching**: Embeddings are computed once per uniqueness hash and saved to disk. Reloads are instant.
+4. **Optimized Resource Usage**: The AI model is loaded into memory only once per server instance, ensuring fast multi-user support in Streamlit.
 
-This MVP leverages **Sentence Transformers (`all-MiniLM-L6-v2`)** to create semantic embeddings.
+## Features
 
-- **Pre-Filtering**: Hard filters (SQL-like) reduce the search space logic first.
-- **Semantic Search**: Computes Cosine Similarity on the filtered subset.
-- **Post-Filtering**: Instant UI filters refine the top results without re-running the AI.
-- **Relevance Scoring**: Normalizes scores to a user-friendly **0-10 Integer Rank**.
-
-## Key Features
-
-- **2-Stage Filtering**:
-  - **Pre-Run (Hard)**: Filter by Level, Category, Duration *before* search (Critical for performance & accuracy).
-  - **Post-Run (Soft)**: Instantly slice & dice the matching results.
-- **Smart Ranking**:
-  - **Integer Rank (0/10)**: Easy to understand score.
-  - **Similarity Thresholds**: Automatically hides weak matches (<25%).
-- **Keyword Guardrails**: Warns if specific queries (e.g. "Flutter") exist in the query but not in the datset.
-- **Auto-Level Detection**: Automatically detects "Advanced" intent (e.g., "Deep Learning", "Expert") and sets the filter accordingly.
-- **Debug Mode**: Toggle visibility of raw similarity scores and engine logic.
+- **📂 Bring Your Own Data**:
+  - Upload CSV via sidebar.
+  - **Auto-Validation**: Fixes schema issues, fills missing values, normalizes levels (Beginner/Intermediate/Advanced).
+  - **Smart Fallback**: Uses a default dataset if no file is provided.
+- **🚀 Advanced Search Engine**:
+  - **Semantic Search**: Understands "machine learning" matches "AI" or "deep learning".
+  - **Pre-Filtering**: Hard SQL-like filters for Level, Category, and Duration.
+  - **Post-Filtering**: Instant UI refinement of results.
+- **🧠 Auto-Intelligence**:
+  - **Abbreviation Extraction**: Scans text and skills to map acronyms (e.g., `AWS` -> `aws a w s`, `BI` -> `business intelligence`).
+  - **Level Detection**: Auto-detects "Advanced" queries.
+- **🛡️ Guardrails**:
+  - Dataset size warnings (>5000 rows).
+  - keyword warnings ('Flutter' query but no 'Flutter' in filtered data).
 
 ## How to Run
 
-### Prerequisites
+### prerequisites
 
 - Python 3.8+
 - pip
@@ -51,55 +52,49 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`.
+The app will open at `http://localhost:8501`. Since the model is cached via `@st.cache_resource`, the first run downloads/loads the model, and subsequent refreshes are instant.
 
-### Usage Guide
+## Usage Guide
 
-1. **Sidebar Configuration (Pre-Run)**:
-    - **Query**: Enter what you want to learn (e.g., "Python for Data Science").
-    - **Pre-Level**: "Any" (Auto-detects) or specific (Beginner/Intermediate/Advanced).
-    - **Pre-Category**: Filter by domain.
-    - **Top K**: How many AI candidates to fetch.
-    - **Show Debug Info**: Check this to see raw scores.
-
-2. **Get Recommendations**: Click the button. The AI searches *only* the filtered subset.
-
-3. **Review & Refine (Post-Run)**:
-    - The main view shows the **Filter Results** section.
-    - Use slides and dropdowns to narrow down the recommended list instantly.
-    - See the **Relevance Rank (X/10)** for each card.
+1. **Upload Dataset (Optional)**:
+    - Use the sidebar file uploader.
+    - Preview the parsed data and check for validation warnings.
+2. **Configure Search**:
+    - Type a query or click an Example Query button (e.g., "ML", "AWS").
+    - Select Pre-Filters (Level, Category).
+3. **Analyze Results**:
+    - View the top semantic matches.
+    - See the **Relevance Fit (0-10)**.
+    - Use Post-Filters to narrow down the list further.
 
 ## Project Structure
 
 ```
 zedny-course-recommender/
-├── app.py                      # Main Streamlit Application (UI + Logic)
+├── app.py                      # UI, Model Caching, Search Logic
 ├── src/
-│   ├── recommender.py          # AI Engine (Embeddings, Ranking, Guardrails)
-│   ├── utils.py                # Data loading & formatting
+│   ├── recommender.py          # Core Engine (Hybrid Search, Embeddings)
+│   ├── utils.py                # Validation, Cleaning, Abbreviation Extraction, Hashing
 ├── data/
-│   └── courses.csv             # Dataset
-├── outputs/                    # Logs (optional)
+│   └── courses.csv             # Default Dataset
+├── outputs/                    # Cached Embeddings, Maps, and Logs (Auto-generated)
 ├── requirements.txt            # Dependencies
 └── README.md                   # Documentation
 ```
 
 ## Technical Details
 
-### Architecture
+### Performance Optimization
 
-1. **Hard Filters**: Pandas masking on `level`, `category`, `duration`.
-2. **Embedding Slice**: The system creates/accesses embeddings *only* for the filtered indices.
-3. **Semantic Similarity**: `Cosine(Query_Vector, Subset_Vectors)`.
-4. **Thresholding**: Drops results with `score < 0.25`.
-5. **Ranking**: `MinMaxScale(Scores) * 10` -> Rounded to Integer.
+- **Model Caching**: `streamlit.cache_resource` ensures the 90MB BERT model is loaded only once across sessions.
+- **Embedding Caching**: MD5 hash of the dataset content is used to key cached `.npy` files.
+- **Vector Operations**: Uses `numpy` and `scikit-learn` for fast cosine similarity blocking.
 
-### Dependencies
+### Schema auto-fix Rules
 
-- `streamlit`: UI
-- `sentence-transformers`: AI Model
-- `pandas` & `numpy`: Data Processing
-- `scikit-learn`: Cosine Similarity
+- **Missing Columns**: Created with default values (Category="General", Level="Beginner").
+- **Level Normalization**: distinct values like 'jun', 'intro' -> 'Beginner'; 'expert', 'deep' -> 'Advanced'.
+- **Duration**: Extracted regex `(\d+)` from strings.
 
 ## License
 
