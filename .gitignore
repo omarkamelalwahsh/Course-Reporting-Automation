@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Outputs
+outputs/
+*.json
+
+# Model / cache
+.cache/
+huggingface/
+*.safetensors
+*.bin
+*.onnx
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
