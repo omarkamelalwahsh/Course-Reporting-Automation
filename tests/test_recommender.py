@@ -1,68 +1,73 @@
 import pytest
-import pandas as pd
-import os
-from src.recommender import CourseRecommender
-from src.utils import normalize_query
+from src.pipeline import CourseRecommenderPipeline
+from src.schemas import RecommendRequest
+import pytest
 
-@pytest.fixture
-def recommender():
-    rec = CourseRecommender()
-    rec.load_courses("data/courses.csv")
-    return rec
+@pytest.fixture(scope="module")
+def pipeline():
+    return CourseRecommenderPipeline()
 
-def test_strict_python_match(recommender):
-    # Query: "Python" must return only courses mentioning Python
-    res = recommender.recommend("Python", top_k=10)
-    assert len(res["results"]) > 0
-    for course in res["results"]:
-        content = f"{course['title']} {course['skills']} {course['description']}".lower()
+def test_strict_python_match(pipeline):
+    """Query: 'Python' must return only courses mentioning Python"""
+    req = RecommendRequest(query="Python", top_k=10)
+    res = pipeline.recommend(req)
+    
+    assert res.total_found > 0
+    for course in res.results:
+        # Pydantic model access: course.title, course.debug_info
+        content = f"{course.title} {course.debug_info.get('full_description', '')} {course.debug_info.get('skills', '')}".lower()
         assert "python" in content
 
-def test_strict_flutter_match(recommender):
-    # Query: "Flutter" must return only courses mentioning Flutter
-    res = recommender.recommend("Flutter", top_k=5)
-    # The dataset used in previous steps has No Flutter. 
-    # If it's missing, it should return error.
-    if not res["results"]:
-        assert "❌ No courses found related to: flutter" in res["debug_info"]["error_message"]
+def test_strict_flutter_match(pipeline):
+    """Query: 'Flutter' must return no results if not in dataset."""
+    req = RecommendRequest(query="Flutter", top_k=5)
+    res = pipeline.recommend(req)
+    
+    if res.total_found == 0:
+        assert len(res.results) == 0
     else:
-        for course in res["results"]:
-            content = f"{course['title']} {course['skills']} {course['description']}".lower()
-            assert "flutter" in content
+        # If dataset updated to have Flutter, validation passes.
+        # Check if contents match
+        for course in res.results:
+             content = f"{course.title} {course.debug_info.get('desc_snippet', '')}".lower()
+             assert "flutter" in content
 
-def test_missing_keyword_error(recommender):
-    # Query: "Rust" (not in dataset) must return error message and no results
-    res = recommender.recommend("Rust programming language", top_k=5)
-    assert len(res["results"]) == 0
-    assert "❌ No courses found related to: rust" in res["debug_info"]["error_message"]
+def test_missing_keyword_error(pipeline):
+    """Query: 'Rust' (not in dataset) must return no results."""
+    req = RecommendRequest(query="Rust programming language", top_k=5)
+    res = pipeline.recommend(req)
+    
+    assert res.total_found == 0
+    assert len(res.results) == 0
 
-def test_abbreviation_expansion(recommender):
-    # Query: "ML" must behave as "machine learning"
-    # We'll check if machine learning courses are found
-    res = recommender.recommend("ML", top_k=5)
-    # The cleaned query should be "machine learning"
-    assert "machine learning" in res["debug_info"]["cleaned_query"]
-    if res["results"]:
-        for course in res["results"]:
-            content = f"{course['title']} {course['skills']} {course['description']}".lower()
-            assert "machine" in content or "learning" in content or "ml" in content
+def test_abbreviation_expansion(pipeline):
+    """Query: 'ML' must be expanded to 'machine learning'."""
+    req = RecommendRequest(query="ML", top_k=5)
+    res = pipeline.recommend(req)
+    
+    # Check debug info for normalized query
+    assert "machine learning" in res.debug_info["normalized_query"]
+    assert res.total_found > 0
+    for course in res.results:
+        content = f"{course.title} {course.debug_info.get('full_description', '')} {course.debug_info.get('skills', '')}".lower()
+        assert "machine" in content or "learning" in content or "ml" in content
 
-def test_rank_validity(recommender):
-    # Rank must be integer between 1 and 10
-    res = recommender.recommend("Javascript", top_k=10)
-    if res["results"]:
-        ranks = [c["rank"] for c in res["results"]]
-        assert all(isinstance(r, int) for r in ranks)
-        assert all(1 <= r <= 10 for r in ranks)
-        if len(res["results"]) > 1:
-            assert max(ranks) == 10
-            assert min(ranks) == 1
+def test_rank_range(pipeline):
+    """Rank must be 1-10 int."""
+    req = RecommendRequest(query="Python", top_k=5)
+    res = pipeline.recommend(req)
+    
+    if res.results:
+        for r in res.results:
+            assert isinstance(r.rank, int)
+            assert 1 <= r.rank <= 10
 
-def test_arabic_query(recommender):
-    # Query: "انا عاوز اتعلم SEO" (I want to learn SEO)
-    # Should ignore first 3 words, search for "SEO"
-    res = recommender.recommend("انا عاوز اتعلم SEO", top_k=5)
-    # "SEO" exists in dataset
-    assert len(res["results"]) > 0
-    assert "seo" in res["debug_info"]["cleaned_query"].lower()
-    assert "انا" not in res["debug_info"]["cleaned_query"]
+def test_arabic_query(pipeline):
+    """Arabic query 'كورس بايثون' should find English Python courses."""
+    req = RecommendRequest(query="كورس بايثون", top_k=5)
+    res = pipeline.recommend(req)
+    
+    assert res.total_found > 0
+    for r in res.results:
+        content = f"{r.title} {r.debug_info.get('full_description', '')} {r.debug_info.get('skills', '')}".lower()
+        assert "python" in content

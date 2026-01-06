@@ -1,95 +1,96 @@
-﻿# 🎓 Zedny Smart Course Recommender
+﻿# Zedny Smart Course Recommender (MVP)
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://course-recommender-nguwc5gsetcqywddjhrwxm.streamlit.app)
+> **Principal AI Engineer Implementation**
+>
+> A robust, production-ready Semantic Search & Recommendation engine built with strict relevance gating, multilingual support, and structured pipeline architecture.
 
-## Executive Summary
+## 🚀 Key Features
 
-**Zedny Smart Course Recommender** is an Intelligent, Zero-Config Search Engine designed to help students find the right courses instantly. It goes beyond simple keywords by understanding the *meaning* of what you want to learn.
+* **Multilingual Semantic Search:** Supports Arabic & English queries with automatic translation (`"كورس بايثون"` -> `"python"`).
+* **Strict Relevance Gating:** Zero hallucinations. Returns "No results" rather than invalid guesses.
+* **Offline-First:** Uses local FAISS index and pre-computed embeddings. No API keys required.
+* **1-10 Smart Ranking:** Normalized integer scoring for easy UI display.
+* **Deep Re-ranking (Optional):** Uses Cross-Encoder for high-precision validation.
 
-**Current Status**: `v2.1 (Fully Automatic)`
-
-- **Live Deployment Ready**
-- **Zero-Touch Startup**: No manual upload needed; just run and search.
-- **Self-Healing**: Automatically fixes data schema issues.
-- **Smart & Fast**: Caches AI models for instant performance.
-
----
-
-## 📖 Full Documentation
-
-For a deep dive into the Architecture, AI Model, and Customization, please read the **[Technical Documentation](DOCUMENTATION.md)**.
-
----
-
-## Key Features
-
-### 🚀 Smart AI Engine
-
-- **Semantic Search**: Understands that "ML" = "Machine Learning" and "coding" = "Programming".
-- **Auto-Learning**: Automatically detects acronyms in your dataset (e.g., `NLP`, `AWS`) and learns their full forms without you doing anything.
-- **Accuracy Guardrails**: Smartly filters out irrelevant results and warns you if your query has no match in the database.
-
-### ⚡ Automatic & Fast
-
-- **Pre-Cached Models**: The heavy AI brain is loaded once; subsequent searches are milliseconds fast.
-- **Data Caching**: Dataset embeddings are saved to disk (`outputs/`) so the app starts up instantly after the first run.
-- **Error Handling**: Gracefully handles single results or empty searches with clear, helpful messages.
-
-### 🎛️ Precision Filtering
-
-1. **Level & Category Filters**: Narrow down by difficulty or topic *before* searching.
-2. **Duration Control**: Filter out courses that are too long or too short.
-3. **Post-Refinement**: Tweak the results list instantly with UI sliders.
-
----
-
-## How to Run
-
-### 1. Installation
-
-Ensure you have Python 3.8+ installed.
-
-```bash
-git clone https://github.com/omarkamelalwahsh/course-recommender.git
-cd course-recommender
-pip install -r requirements.txt
-```
-
-### 2. Run the App
-
-```bash
-streamlit run app.py
-```
-
-The app will open automatically in your browser at `http://localhost:8501`.
-
----
-
-## Usage Guide
-
-1. **Search**: Just type what you want (e.g., "Python for data science" or "web dev").
-2. **Filter**: Use the sidebar to set your level (Beginner/Advanced) or Category.
-3. **Refine**: If you get too many results, use the sliders below the search bar to narrow them down.
-
-*Note: If you search for something completely unrelated (e.g., "Cooking"), the system will show an error indicating that no matching content exists.*
-
----
-
-## Project Structure
+## 📂 Project Structure
 
 ```
-zedny-course-recommender/
-├── app.py                      # Main Application Entry Point
-├── DOCUMENTATION.md            # Detailed Technical Docs
-├── requirements.txt            # Python Dependencies
-├── data/
-│   └── courses.csv             # The Course Dataset
+c:\course-recommender\
+├── app.py                  # Streamlit UI Entry Point
+├── main.py                 # CLI Entry Point
 ├── src/
-│   ├── recommender.py          # AI Engine & Logic
-│   └── utils.py                # Data Processing & Caching
-└── outputs/                    # Auto-generated cache files
+│   ├── ai/                 # Core AI Logic
+│   │   ├── embeddings.py   # SentenceTransformer Wrapper
+│   │   ├── gating.py       # Strict/Semantic Gating Logic
+│   │   └── ranker.py       # Score Normalization
+│   ├── pipeline.py         # Main Orchestrator
+│   ├── config.py           # Constants & Config
+│   ├── logger.py           # Structured JSON Logger
+│   ├── schemas.py          # Pydantic Input/Output Models
+│   └── utils.py            # Text Normalization & Tools
+├── data/                   # Dataset & Indices
+│   ├── courses.csv         # Raw Data
+│   └── faiss.index         # Vector Index
+├── scripts/
+│   └── build_index.py      # Offline Index Builder
+└── tests/                  # Unit Tests
 ```
 
-## License
+## 🛠️ Installation
 
-Educational MVP for Zedny.
+**Prerequisites:** Python 3.10+ (Windows/Linux/Mac)
+
+1. **Clone & Install Dependencies**
+
+    ```powershell
+    pip install -r requirements.txt
+    ```
+
+2. **Build Offline Index** (Must run once)
+
+    ```powershell
+    python scripts/build_index.py
+    ```
+
+    *Expect "Saving embeddings to data/course_embeddings.npy..."*
+
+## 🏃‍♂️ Usage
+
+### 1. Web UI (Streamlit)
+
+The primary interface for users.
+
+```powershell
+python -m streamlit run app.py
+```
+
+* Opens in your browser at `http://localhost:8502`.
+* Try queries: `Python`, `Machine Learning`, `كورس بايثون`.
+
+### 2. CLI (Command Line)
+
+For quick testing and automation.
+
+```powershell
+python main.py "machine learning" --top_k 5
+```
+
+## 🧪 Testing
+
+Run the rigorous test suite to verify relevance and strict gating.
+
+```powershell
+python -m pytest tests/test_recommender.py
+```
+
+## ⚠️ Troubleshooting
+
+| Error | Fix |
+| :--- | :--- |
+| `Index missing` | Run `python scripts/build_index.py` |
+| `ModuleNotFoundError` | Ensure you run from root `c:\course-recommender` |
+| `OpenAI API Key missing` | Not needed! This project is 100% offline. |
+
+---
+**Version:** 2.0.0 (Principal MVP Refactor)
+**Author:** Antigravity (Google DeepMind)

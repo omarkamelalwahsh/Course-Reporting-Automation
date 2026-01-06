@@ -1,139 +1,129 @@
 ﻿import streamlit as st
 import pandas as pd
-import json
-import os
-from src.recommender import CourseRecommender
+from typing import Dict, Any
+from src.pipeline import CourseRecommenderPipeline
+from src.schemas import RecommendRequest
+from src.config import TOP_K_DEFAULT
 
-# Page Configuration
+# Page Config
 st.set_page_config(
     page_title="Zedny Smart Recommender",
     page_icon="🎓",
     layout="wide"
 )
 
-# Minimalist Style
+# Custom CSS
 st.markdown("""
 <style>
-    .course-card {
-        background-color: #ffffff;
-        border-radius: 4px;
+    .result-card {
+        background-color: #f0f2f6;
         padding: 20px;
-        margin-bottom: 20px;
-        border-left: 5px solid #1a73e8;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border-radius: 10px;
+        margin-bottom: 15px;
+        border-left: 5px solid #ff4b4b;
     }
     .rank-badge {
-        background-color: #1a73e8;
+        background-color: #ff4b4b;
         color: white;
-        padding: 2px 10px;
-        border-radius: 4px;
+        padding: 5px 10px;
+        border-radius: 15px;
         font-weight: bold;
-        float: right;
     }
-    .meta-text {
-        font-size: 0.85em;
-        color: #5f6368;
-        margin-bottom: 10px;
+    .score {
+        color: #666;
+        font-size: 0.8em;
+    }
+    a {
+        text-decoration: none;
+        color: #000;
+        font-weight: bold;
+        font-size: 1.1em;
+    }
+    a:hover {
+        color: #ff4b4b;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Singleton Recommender
+# Application State
 @st.cache_resource
-def get_rec():
-    r = CourseRecommender()
-    path = "data/courses.csv"
-    if not os.path.exists(path):
-        st.error(f"Dataset not found at {path}")
-        st.stop()
-    r.load_courses(path)
-    return r
+def get_pipeline():
+    return CourseRecommenderPipeline()
 
-rec = get_rec()
+def main():
+    st.title("🎓 Zedny Smart Course Recommender")
+    st.caption("AI-Powered Semantic Search | production-v2")
 
-# Sidebar
-with st.sidebar:
-    st.title("Settings")
-    st.markdown("---")
-    pre_lvls = ["Any", "White", "Beginner", "Intermediate", "Advanced"]
-    pre_cats = ["Any"] + sorted(list(rec.courses_df['category'].unique()))
+    with st.spinner("Initializing AI Engine..."):
+        try:
+            pipeline = get_pipeline()
+        except Exception as e:
+            st.error(f"Failed to initialize system: {e}")
+            st.stop()
+
+    # Sidebar Filters
+    st.sidebar.header("🔍 Search Filters")
+    top_k = st.sidebar.slider("Number of Results", 5, 50, TOP_K_DEFAULT)
     
-    sel_lvl = st.selectbox("Level (Pre-filter)", pre_lvls)
-    sel_cat = st.selectbox("Category (Pre-filter)", pre_cats)
-    max_h = int(rec.courses_df['duration_hours'].max()) + 1
-    sel_h = st.slider("Max Duration (Hours)", 0, max_h, max_h)
-    
-    st.markdown("---")
-    top_k = st.number_input("Max Results", 5, 100, 30)
-    debug_on = st.checkbox("Show Debug Logs")
+    # Extract unique values for filters (if df is loaded)
+    categories = ["Any"]
+    levels = ["Any"]
+    if pipeline.courses_df is not None:
+        categories += sorted(pipeline.courses_df['category'].dropna().unique().tolist())
+        levels += sorted(pipeline.courses_df['level'].dropna().unique().tolist())
 
-# Main UI
-st.title("🎓 Zedny Smart Course Recommender")
-st.markdown("Enter keywords to find relevant courses with 100% precision.")
+    sel_category = st.sidebar.selectbox("Category", categories)
+    sel_level = st.sidebar.selectbox("Level", levels)
+    enable_rerank = st.sidebar.checkbox("Enable Deep Re-ranking (Slow)", value=False)
+    show_debug = st.sidebar.checkbox("Show Debug Info", value=False)
 
-q_col, b_col = st.columns([4, 1])
-with q_col:
-    query = st.text_input("What do you want to learn?", placeholder="e.g. Python, SQL, Marketing")
-with b_col:
-    st.write("")
-    st.write("")
-    btn = st.button("Search", type="primary", use_container_width=True)
+    # Main Search
+    query = st.text_input("What do you want to learn today?", placeholder="e.g. Python, Machine Learning, Leadership...")
 
-if btn or (query and "res_strict" not in st.session_state):
-    if not query.strip():
-        st.warning("Please enter a search query.")
-    else:
-        with st.spinner("Filtering dataset..."):
-            pre_f = {"level": sel_lvl, "category": sel_cat, "max_duration": sel_h}
-            res = rec.recommend(query, top_k=top_k, pre_filters=pre_f)
-            st.session_state["res_strict"] = res
+    if query:
+        # Construct Request
+        filters = {}
+        if sel_category != "Any": filters['category'] = sel_category
+        if sel_level != "Any": filters['level'] = sel_level
 
-# Results
-if "res_strict" in st.session_state:
-    res = st.session_state["res_strict"]
-    data = res.get("results", [])
-    dbg = res.get("debug_info", {})
-    
-    # ERROR MESSAGE
-    if dbg.get("error_message"):
-        st.error(dbg["error_message"])
-    
-    if debug_on:
-        with st.expander("Debug Details"):
-            st.json(dbg)
-
-    if data:
-        st.markdown("---")
-        # Post-filters
-        p_c1, p_c2 = st.columns(2)
-        with p_c1:
-            p_cat = st.multiselect("Refine Category", sorted(list(set(r['category'] for r in data))))
-        with p_c2:
-            p_lvl = st.multiselect("Refine Level", sorted(list(set(r['level'] for r in data))))
+        try:
+            req = RecommendRequest(
+                query=query,
+                top_k=top_k,
+                filters=filters,
+                enable_reranking=enable_rerank
+            )
             
-        filtered = data
-        if p_cat: filtered = [r for r in filtered if r['category'] in p_cat]
-        if p_lvl: filtered = [r for r in filtered if r['level'] in p_lvl]
-        
-        st.info(f"Showing {len(filtered)} relevant courses")
-        
-        for c in filtered:
-            with st.container():
-                st.markdown(f'<span class="rank-badge">Rank: {c["rank"]}/10</span>', unsafe_allow_html=True)
+            with st.spinner("Thinking..."):
+                response = pipeline.recommend(req)
+
+            if not response.results:
+                st.warning(f"No relevant courses found for '{query}'. Try a different keyword.")
+                if show_debug:
+                    st.json(response.debug_info)
+            else:
+                st.write(f"Found **{response.total_found}** relevant courses.")
                 
-                # Title Link
-                url = c.get('course_link', '')
-                if url:
-                    st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none; font-size:1.4em; font-weight:bold; color:#1a73e8;">{c["title"]}</a>', unsafe_allow_html=True)
-                else:
-                    st.subheader(c['title'])
+                for res in response.results:
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="result-card">
+                            <span class="rank-badge">#{res.rank}</span>
+                            <a href="{res.url}" target="_blank">{res.title}</a>
+                            <p>{res.debug_info.get('desc_snippet')}...</p>
+                            <span class="score">Relevance Score: {res.score:.4f}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
                 
-                st.markdown(f'<div class="meta-text">{c["category"]} | {c["level"]} | {c["instructor"]}</div>', unsafe_allow_html=True)
-                st.write(f"{c['description'][:300]}...")
-                
-                # Skills
-                sk = str(c['skills']).split('|')
-                st.markdown(" ".join([f"`{s}`" for s in sk if s.strip()]))
-                st.markdown("---")
-else:
-    st.info("👈 Enter a topic and click Search to begin.")
+                if show_debug:
+                    st.divider()
+                    st.subheader("Debug Information")
+                    st.json(response.debug_info)
+
+        except Exception as e:
+            st.error(f"Error processing request: {e}")
+            if show_debug:
+                st.exception(e)
+
+if __name__ == "__main__":
+    main()
