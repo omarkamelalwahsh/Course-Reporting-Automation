@@ -16,9 +16,12 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12
 RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # Validation & Thresholds
+# Validation & Thresholds
 MIN_QUERY_LENGTH = 2
-SEMANTIC_THRESHOLD_ARABIC = 0.15
-TOP_K_DEFAULT = 30
+SEMANTIC_THRESHOLD_ARABIC = 0.25 # slightly lower for cross-lingual
+SEMANTIC_THRESHOLD_GENERAL = 0.35 # Standard strictness
+SEMANTIC_THRESHOLD_RELAXED = 0.22 # Fallback
+TOP_K_DEFAULT = 10
 TOP_K_Candidates = 100
 
 # Logging

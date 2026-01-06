@@ -6,6 +6,8 @@ class Recommendation(BaseModel):
     url: str
     rank: int = Field(..., ge=1, le=10)
     score: float
+    matched_keywords: List[str] = []
+    why: List[str] = []
     debug_info: Optional[Dict[str, Any]] = None
 
 class RecommendRequest(BaseModel):
