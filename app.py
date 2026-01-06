@@ -1,204 +1,201 @@
-﻿import streamlit as st
+﻿
+import streamlit as st
 import pandas as pd
-from typing import Dict, Any
+import time
 from src.pipeline import CourseRecommenderPipeline
 from src.schemas import RecommendRequest
 from src.config import TOP_K_DEFAULT
 
-# Page Config
+# --- Page Config ---
 st.set_page_config(
-    page_title="Zedny Smart Recommender",
+    page_title="المقترح الذكي للكورسات - زدني",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling (Vibe Coding Approved)
-st.markdown("""
-<style>
-    /* Card Container */
-    .result-card {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 12px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e0e0e0;
-        transition: transform 0.2s ease;
-    }
-    .result-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Rank Badge */
-    .rank-badge {
-        background-color: #ff4b4b;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 8px;
-        font-weight: 700;
-        font-size: 0.9em;
-        margin-right: 10px;
-        display: inline-block;
-    }
-    
-    /* Title Link */
-    .course-title {
-        font-size: 1.3em;
-        font-weight: 700;
-        color: #1f2937;
-        text-decoration: none;
-    }
-    .course-title:hover {
-        color: #ff4b4b;
-        text-decoration: underline;
-    }
-    
-    /* Metadata */
-    .meta-tag {
-        background-color: #f3f4f6;
-        color: #4b5563;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.8em;
-        margin-right: 8px;
-    }
-    
-    /* Explanation Section */
-    .why-section {
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #f0f0f0;
-        font-size: 0.85em;
-        color: #059669; /* Green for explanation checking */
-    }
-    
-    /* Score */
-    .score-text {
-        float: right;
-        color: #9ca3af;
-        font-size: 0.8em;
-    }
-</style>
-""", unsafe_allow_html=True)
+# --- Validations ---
+if "pipeline" not in st.session_state:
+    st.session_state.pipeline = None
 
-# Application State
 @st.cache_resource
 def get_pipeline():
     return CourseRecommenderPipeline()
 
+# --- Custom CSS for Cards & RTL ---
+st.markdown("""
+<style>
+    /* Force RTL Layout */
+    .element-container, .stMarkdown, .stText, .stTextInput, .stMultiSelect, .stSlider {
+        direction: rtl; 
+        text-align: right;
+    }
+    
+    .course-card {
+        background-color: #1E1E1E;
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        transition: transform 0.2s;
+        direction: rtl;
+        text-align: right;
+    }
+    .course-card:hover {
+        transform: scale(1.02);
+        border-color: #4CAF50;
+    }
+    .course-title {
+        font-size: 20px;
+        font-weight: bold;
+        color: #4CAF50 !important;
+        text-decoration: none;
+        margin-bottom: 5px;
+        display: block;
+    }
+    .course-meta {
+        color: #888;
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
+    .course-desc {
+        color: #ddd;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+    .score-badge {
+        background-color: #2c2c2c;
+        color: #4CAF50;
+        padding: 3px 8px;
+        border-radius: 5px;
+        font-size: 12px;
+        margin-left: 10px;
+        font-weight: bold;
+    }
+    .why-section {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #262626;
+        border-radius: 5px;
+        font-size: 13px;
+        color: #aaa;
+    }
+    .stAlert { direction: rtl; }
+</style>
+""", unsafe_allow_html=True)
+
 def main():
-    st.title("🎓 Zedny Smart Course Recommender")
-    st.caption("AI-Powered Semantic Search | Production V2")
+    # Header
+    st.markdown("<h1 style='text-align: right; color: #4CAF50;'>🎓 المقترح الذكي للكورسات</h1>", unsafe_allow_html=True)
+    st.markdown("<h4 style='text-align: right; color: #888;'>محرك ذكاء اصطناعي للبحث عن الكورسات بدقة عالية</h4>", unsafe_allow_html=True)
 
-    # 1. Initialize Pipeline (Always run)
-    with st.spinner("Initializing AI Engine..."):
-        try:
-            pipeline = get_pipeline()
-        except Exception as e:
-            st.error(f"Failed to initialize system: {e}")
-            st.stop()
+    # Init Pipeline
+    if st.session_state.pipeline is None:
+        with st.spinner("جاري تحميل محرك الذكاء الاصطناعي..."):
+            try:
+                st.session_state.pipeline = get_pipeline()
+            except Exception as e:
+                st.error(f"فشل التحميل: {e}")
+                st.stop()
 
-    # 2. Sidebar Filters (Always Visible)
-    st.sidebar.header("🔍 Search Filters")
+    pipeline = st.session_state.pipeline
+
+    # --- Sidebar Filters ---
+    st.sidebar.header("🔍 خيارات البحث")
     
-    # Dynamic Options
-    categories = ["Any"]
-    levels = ["Any"]
+    # Extract categories
+    categories = ["الكل"]
+    levels = ["الكل"]
+    
     if pipeline.courses_df is not None:
-        if 'category' in pipeline.courses_df.columns:
-            categories += sorted(pipeline.courses_df['category'].dropna().unique().tolist())
-        if 'level' in pipeline.courses_df.columns:
-            levels += sorted(pipeline.courses_df['level'].dropna().unique().tolist())
+        cats = sorted(pipeline.courses_df['category'].dropna().unique().tolist())
+        levs = sorted(pipeline.courses_df['level'].dropna().unique().tolist())
+        categories += cats
+        levels += levs
 
-    sel_category = st.sidebar.selectbox("Category", categories)
-    sel_level = st.sidebar.selectbox("Level", levels)
-    top_k = st.sidebar.slider("Number of Results", 3, 30, TOP_K_DEFAULT)
-    enable_rerank = st.sidebar.checkbox("Deep Re-ranking (Slow)", value=False)
-    show_debug = st.sidebar.checkbox("Show Explanation & Debug", value=False)
+    sel_category = st.sidebar.selectbox("التصنيف", categories)
+    sel_level = st.sidebar.selectbox("المستوى", levels)
+    top_k = st.sidebar.slider("عدد النتائج", 5, 50, TOP_K_DEFAULT)
     
+    enable_rerank = st.sidebar.checkbox("تفعیل الترتيب العميق (أبطأ ولكن أدق)", value=False)
+    show_debug = st.sidebar.checkbox("إظهار تفاصيل الذكاء الاصطناعي", value=False)
+
     st.sidebar.markdown("---")
-    st.sidebar.info("Tip: Try searching for 'Python', 'Leadership', or 'تسويق الكتروني'")
+    st.sidebar.caption("v2.0 - Production | صارم جداً")
 
-    # 3. Main Search
-    query = st.text_input("What do you want to learn today?", placeholder="e.g. Machine Learning, Project Management...")
+    # --- Search Input ---
+    query = st.text_input("ماذا تريد أن تتعلم اليوم؟", placeholder="مثال: بايثون، تسويق، إدارة أعمال...")
 
+    # --- Logic ---
     if query:
-        # Validate input
         if len(query.strip()) < 2:
-            st.warning("Please enter a longer query to get good results.")
+            st.warning("الرجاء كتابة كلمة بحث واضحة (حرفين على الأقل).")
             return
 
-        # Construct Request
-        filters = {}
-        if sel_category != "Any": filters['category'] = sel_category
-        if sel_level != "Any": filters['level'] = sel_level
+        with st.spinner("جاري التحليل والبحث..."):
+            try:
+                # Prepare Filter
+                filters = {}
+                if sel_category != "الكل": filters['category'] = sel_category
+                if sel_level != "الكل": filters['level'] = sel_level
 
-        try:
-            req = RecommendRequest(
-                query=query,
-                top_k=top_k,
-                filters=filters,
-                enable_reranking=enable_rerank
-            )
-            
-            with st.spinner("Searching & Ranking..."):
-                response = pipeline.recommend(req)
+                request = RecommendRequest(
+                    query=query,
+                    top_k=top_k,
+                    filters=filters,
+                    rerank=enable_rerank
+                )
+                
+                # Run Pipeline
+                response = pipeline.recommend(request)
 
-            # 4. Results Display
-            st.markdown(f"### Results for `{query}`")
-            
-            if not response.results:
-                st.warning("😕 No courses matched your query explicitly.")
-                st.info("Try relaxing your filters or using broader keywords.")
-                
-                if show_debug:
-                    with st.expander("Debug Info"):
-                        st.json(response.debug_info)
-            else:
-                st.success(f"Found {response.total_found} relevant courses.")
-                
-                for res in response.results:
-                    # Construct Meta Tags
-                    cat_tag = f'<span class="meta-tag">📂 {res.debug_info.get("category", "General")}</span>'
-                    lvl_tag = f'<span class="meta-tag">📊 {res.debug_info.get("level", "All")}</span>'
+                # --- Display Results ---
+                if response.total_found == 0:
+                    st.warning("⚠️ لم يتم العثور على أي كورسات تطابق بحثك بدقة.")
+                    st.info("نصيحة: جرب كلمات عامة أكثر، أو تأكد من الإملاء. نظامنا صارم ويعرض فقط الكورسات ذات الصلة المباشرة.")
+                else:
+                    st.success(f"تم العثور على {response.total_found} كورس مناسب!")
                     
-                    # Construct Why Section
-                    why_html = ""
-                    if show_debug and res.why:
-                        why_bullets = "".join([f"<li>{reason}</li>" for reason in res.why])
-                        why_html = f"""
-                        <div class="why-section">
-                            <b>💡 Why this course?</b>
-                            <ul>{why_bullets}</ul>
+                    for res in response.results:
+                        # Translate Level/Category visual if needed, currently passing English data
+                        # We can improve this if we had Arabic mappings for data too.
+                        
+                        why_html = ""
+                        if show_debug and res.match_reasons:
+                            reasons = " • ".join(res.match_reasons)
+                            kws = ", ".join(res.matched_keywords)
+                            why_html = f"""
+                            <div class='why-section'>
+                                <strong>💡 لماذا هذا الكورس؟</strong><br>
+                                الأسباب: {reasons}<br>
+                                الكلمات المطابقة: {kws}
+                            </div>
+                            """
+                        
+                        card_html = f"""
+                        <div class="course-card">
+                            <a href="{res.url}" target="_blank" class="course-title">
+                                #{res.rank} {res.title}
+                            </a>
+                            <div class="course-meta">
+                                <span class="score-badge">الصلة: {int(res.score * 100)}%</span>
+                                | التصنيف: {res.category} | المستوى: {res.level}
+                            </div>
+                            <div class="course-desc">
+                                {res.debug_info.get('desc_snippet', '')}...
+                            </div>
+                            {why_html}
                         </div>
                         """
-                    
-                    # Card HTML
-                    st.markdown(f"""
-                    <div class="result-card">
-                        <div>
-                            <span class="rank-badge">#{res.rank}</span>
-                            <a href="{res.url}" target="_blank" class="course-title">{res.title}</a>
-                            <span class="score-text">Score: {res.score:.2f}</span>
-                        </div>
-                        <div style="margin-top: 8px; margin-bottom: 8px;">
-                            {cat_tag} {lvl_tag}
-                        </div>
-                        <p style="color: #4b5563; line-height: 1.5;">{res.debug_info.get('desc_snippet')}...</p>
-                        {why_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                if show_debug:
-                    st.divider()
-                    st.json(response.debug_info)
+                        st.markdown(card_html, unsafe_allow_html=True)
+                        
+                    if show_debug:
+                        with st.expander("🛠️ البيانات التقنية الكاملة (JSON)"):
+                            st.json(response.dict())
 
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-            if show_debug:
-                st.exception(e)
+            except Exception as e:
+                st.error(f"حدث خطأ غير متوقع: {e}")
+                # st.exception(e) # Uncomment for dev trace
 
 if __name__ == "__main__":
     main()
