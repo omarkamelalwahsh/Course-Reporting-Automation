@@ -30,6 +30,7 @@ def normalize_query(query: str) -> str:
     ar_to_en = {
         # Languages
         'بايثون': 'python', 'جافا': 'java', 'سي شارب': 'c#', 'سي بلس بلس': 'c++', 
+        'سي بليس بلس': 'c++', 'سى بلس ': 'c+', 'سي ': 'c', 
         'جافاسكريبت': 'javascript', 'جافا سكربت': 'javascript', 'بي اتش بي': 'php',
         'روبي': 'ruby', 'سويفت': 'swift', 'كوتلن': 'kotlin', 'دارت': 'dart',
         'راست': 'rust', 'جو': 'golang', 'جولانج': 'golang', 'اس كيو ال': 'sql',

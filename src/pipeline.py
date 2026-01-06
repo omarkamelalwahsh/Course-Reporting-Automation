@@ -11,8 +11,10 @@ from src.config import (
     TOP_K_Candidates, 
     SEMANTIC_THRESHOLD_ARABIC, 
     SEMANTIC_THRESHOLD_GENERAL, 
+    SEMANTIC_THRESHOLD_GENERAL, 
     SEMANTIC_THRESHOLD_RELAXED
 )
+from src.ai.gating import extract_strong_keywords_regex, STRICT_TECH_KEYWORDS
 
 logger = setup_logger(__name__)
 
@@ -23,6 +25,16 @@ class CourseRecommenderPipeline:
         
         # Load data on init
         self.index, self.courses_df = self.data_loader.load_data()
+        
+        # Build Global Vocabulary for Strict Checking
+        # We concat all titles, skills, and descriptions into a single text blob lowercased
+        self.global_corpus_text = ""
+        if self.courses_df is not None:
+            self.global_corpus_text = " ".join(
+                self.courses_df['title'].fillna('').astype(str).tolist() + 
+                self.courses_df['skills'].fillna('').astype(str).tolist() + 
+                self.courses_df['description'].fillna('').astype(str).tolist()
+            ).lower()
 
     def recommend(self, request: RecommendRequest) -> RecommendResponse:
         start_time = time.time()
@@ -35,6 +47,47 @@ class CourseRecommenderPipeline:
         norm_query = normalize_query(original_query)
         is_ar = is_arabic(original_query)
         
+        # --- GLOBAL DATA EXISTENCE CHECK (Strict) ---
+        # 1. Extract Strict Keywords (e.g. ['python', 'c++']) using shared logic
+        # We temporarily import extract function or replicate logic slightly for check
+        
+        strict_kws = extract_strong_keywords_regex(norm_query)
+        # Filter only those that are in our STRICT list (like 'c++', 'java')
+        # We don't want to block 'advanced' or 'learning' if they are not in global text (unlikely anyway)
+        # But 'C++' is critical.
+        
+        critical_kws = [k for k in strict_kws if k.lower() in STRICT_TECH_KEYWORDS]
+        
+        for kw in critical_kws:
+            # Check if this critical keyword exists ANYWHERE in our data
+            # using simple heuristic: if kw not in global_corpus_text -> 0 results
+            # We use strict boundaries check for short words like 'c', 'r', 'go' if needed, 
+            # but for now simple ' in ' check is robust enough for 'c++', 'java', etc.
+            
+            # Special check for C++ to avoid partial match issues if needed, 
+            # but 'c++' is unique enough.
+            # Use regex search in global corpus for accuracy (avoid matching 'javascript' for 'java' check in corpus?)
+            # Actually, global_corpus_text is huge. 'java' will match 'javascript'.
+            # BUT: if 'java' is missing, it won't be there independently? 
+            # If dataset has 'JavaScript Course', text has "... javascript ...".
+            # 'java' in "javascript" is True.
+            # So if user searches "Java" and we only have "JavaScript", this check PASSES (it thinks Java exists).
+            # Then Gating logic later filters it out (because Gating is per-course).
+            # So this is safe. 
+            # The Danger is: User searches "C++". Dataset has NOTHING. 
+            # 'c++' in text? False. -> RETURN 0. CORRECT.
+            
+            if kw.lower() not in self.global_corpus_text:
+                logger.warning(f"Blocking query '{original_query}' because '{kw}' is not in database.")
+                return RecommendResponse(
+                    results=[], 
+                    total_found=0, 
+                    debug_info={
+                        "blocked_reason": f"Topic '{kw}' not found in database.",
+                        "time_taken": time.time() - start_time
+                    }
+                )
+
         # Determine strictness per query type
         tokens = norm_query.split()
         is_short_query = len(tokens) <= 2
@@ -44,17 +97,17 @@ class CourseRecommenderPipeline:
             current_threshold = SEMANTIC_THRESHOLD_ARABIC
         else:
             current_threshold = SEMANTIC_THRESHOLD_GENERAL
-
+            
         logger.info(f"Query: '{original_query}' | Norm: '{norm_query}' | Short: {is_short_query} | Threshold: {current_threshold}")
-
+        
         # 2. Embed Query
         query_vector = self.embedding_service.encode(norm_query)
-
+        
         # 3. FAISS Search
         D, I = self.index.search(query_vector, TOP_K_Candidates)
         distances = D[0]
         indices = I[0]
-
+        
         # 4. Filtering Strategy (Try Strict first, fallback if needed)
         
         def filter_candidates(threshold_val):

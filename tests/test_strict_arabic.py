@@ -76,3 +76,23 @@ def test_typo_javascript_space(pipeline):
         print(f"JS Typo Result: {r.title}")
         is_js = 'javascript' in r.title.lower() or 'javascript' in r.matched_keywords
         assert is_js, f"Expected JavaScript course, got {r.title}"
+
+def test_strict_cpp_arabic_variation(pipeline):
+    """Test: 'سي بليس بلس' -> C++."""
+    # User reported this specific spelling
+    req = RecommendRequest(query="سي بليس بلس", top_k=5)
+    res = pipeline.recommend(req)
+    
+    # If we have C++ courses, it should find them.
+    # If not, it should find 0.
+    # Crucially, it should NOT find "3D Max" or "Soft Skills".
+    
+    if res.total_found > 0:
+        for r in res.results:
+            print(f"C++ Result: {r.title}")
+            # Check strictness
+            is_cpp = 'c++' in r.title.lower() or 'c++' in r.matched_keywords
+            assert is_cpp, f"Expected C++ course, got {r.title}"
+    else:
+        # If no C++ courses, that's fine, as long as we don't return junk.
+        pass
