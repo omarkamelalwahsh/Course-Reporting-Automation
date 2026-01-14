@@ -1,4 +1,4 @@
-﻿# 🎓 Zedny Smart Course Recommender & Intelligence System
+﻿# 🎓  Smart Course Recommender & Intelligence System
 
 ## 📝 Overview
 
@@ -84,6 +84,5 @@ python scripts/build_index.py
 - **Model Download**: On first run, the system will download the `sentence-transformers` model (~100MB).
 
 ---
-*Developed for Zedny MVP.*
-"# Course-Reporting-Automation" 
-"# Course-Reporting-Automation" 
+
+"# Course-Reporting-Automation"
