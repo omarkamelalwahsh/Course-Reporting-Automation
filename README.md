@@ -1,96 +1,87 @@
-﻿# Zedny Smart Course Recommender (MVP)
+﻿# 🎓 Zedny Smart Course Recommender & Intelligence System
 
-> **Principal AI Engineer Implementation**
->
-> A robust, production-ready Semantic Search & Recommendation engine built with strict relevance gating, multilingual support, and structured pipeline architecture.
+## 📝 Overview
+
+An AI-powered system designed to provide semantic course recommendations and generate weekly intelligence reports. Built for **Zedny**, this project leverages state-of-the-art NLP models to understand user intent and deliver high-quality educational insights.
 
 ## 🚀 Key Features
 
-* **Multilingual Semantic Search:** Supports Arabic & English queries with automatic translation (`"كورس بايثون"` -> `"python"`).
-* **Strict Relevance Gating:** Zero hallucinations. Returns "No results" rather than invalid guesses.
-* **Offline-First:** Uses local FAISS index and pre-computed embeddings. No API keys required.
-* **1-10 Smart Ranking:** Normalized integer scoring for easy UI display.
-* **Deep Re-ranking (Optional):** Uses Cross-Encoder for high-precision validation.
+- **AI-Powered Recommendation Engine**: Uses Sentence Transformers for semantic similarity search.
+- **2-Stage Filtering**: Combines hard pre-filters (level, category) with soft post-filters for precision.
+- **Automated Intelligence Reports**: Generates weekly reports in JSON, Markdown, HTML, and professional PDF formats.
+- **Role-Based Search**: Tailored recommendations for specific job roles.
+- **Interactive UI**: Built with Streamlit for a premium user experience.
+- **Production-Ready API**: FastAPI backend with automated health checks and structured logging.
 
-## 📂 Project Structure
+## 🏗️ Project Structure
 
-```
-c:\course-recommender\
-├── app.py                  # Streamlit UI Entry Point
-├── main.py                 # CLI Entry Point
-├── src/
-│   ├── ai/                 # Core AI Logic
-│   │   ├── embeddings.py   # SentenceTransformer Wrapper
-│   │   ├── gating.py       # Strict/Semantic Gating Logic
-│   │   └── ranker.py       # Score Normalization
-│   ├── pipeline.py         # Main Orchestrator
-│   ├── config.py           # Constants & Config
-│   ├── logger.py           # Structured JSON Logger
-│   ├── schemas.py          # Pydantic Input/Output Models
-│   └── utils.py            # Text Normalization & Tools
-├── data/                   # Dataset & Indices
-│   ├── courses.csv         # Raw Data
-│   └── faiss.index         # Vector Index
-├── scripts/
-│   └── build_index.py      # Offline Index Builder
-└── tests/                  # Unit Tests
-```
-
-## 🛠️ Installation
-
-**Prerequisites:** Python 3.10+ (Windows/Linux/Mac)
-
-1. **Clone & Install Dependencies**
-
-    ```powershell
-    pip install -r requirements.txt
-    ```
-
-2. **Build Offline Index** (Must run once)
-
-    ```powershell
-    python scripts/build_index.py
-    ```
-
-    *Expect "Saving embeddings to data/course_embeddings.npy..."*
-
-## 🏃‍♂️ Usage
-
-### 1. Web UI (Streamlit)
-
-The primary interface for users.
-
-```powershell
-python -m streamlit run app.py
+```text
+course-recommender/
+├── app.py                  # Streamlit UI Entrypoint
+├── main.py                 # Unified CLI Entrypoint (Scrape, Report, Search)
+├── requirements.txt        # Unified Dependencies
+├── .env.example            # Environment Template (Safe for GitHub)
+├── src/                    # Core Source Code
+│   ├── ai/                 # AI Engine & Recommender Pipeline
+│   │   ├── engine.py       # Recommendation Engine (Semantic Search)
+│   │   └── pipeline.py     # End-to-end processing logic
+│   ├── scraper/            # Web Scraping & API Clients
+│   │   └── client.py       # Zedny API Client
+│   ├── report/             # Report Generation Logic (PDF/Excel)
+│   ├── mailer/             # Email Dispatching
+│   ├── api/                # FastAPI Backend
+│   ├── config.py           # Settings & Env Validation (Pydantic)
+│   ├── logger.py           # Unified Logging System
+│   └── utils.py            # Shared Utilities
+├── data/                   # Dataset & Sample Files
+├── docs/                   # Documentation (EN/AR)
+├── tests/                  # Unit & Smoke Tests
+└── outputs/                # Local Generated Reports (Git Ignored)
 ```
 
-* Opens in your browser at `http://localhost:8502`.
-* Try queries: `Python`, `Machine Learning`, `كورس بايثون`.
+## 🚀 Getting Started
 
-### 2. CLI (Command Line)
+### 1. Prerequisites
 
-For quick testing and automation.
+- Python 3.8+
+- [Optional] Virtual Environment (`python -m venv venv`)
 
-```powershell
-python main.py "machine learning" --top_k 5
+### 2. Installation
+
+```bash
+pip install -r requirements.txt
 ```
 
-## 🧪 Testing
+### Running the UI
 
-Run the rigorous test suite to verify relevance and strict gating.
-
-```powershell
-python -m pytest tests/test_recommender.py
+```bash
+streamlit run app.py
 ```
 
-## ⚠️ Troubleshooting
+### Running the API
 
-| Error | Fix |
-| :--- | :--- |
-| `Index missing` | Run `python scripts/build_index.py` |
-| `ModuleNotFoundError` | Ensure you run from root `c:\course-recommender` |
-| `OpenAI API Key missing` | Not needed! This project is 100% offline. |
+```bash
+uvicorn src.api.main:app --reload
+```
+
+### Building the Search Index
+
+If you update the dataset, rebuild the FAISS index:
+
+```bash
+python scripts/build_index.py
+```
+
+## 🔒 Security First
+
+- **Zero Secrets in Code**: All sensitive data is extracted to `.env`.
+- **Validation**: The system performs a startup check on environment variables.
+- **Ignored Files**: Logs, outputs, and `.env` are automatically excluded from Git.
+
+## 🛠️ Troubleshooting
+
+- **Missing Token**: If the app fails at startup, ensure `ZEDNY_AUTH_TOKEN` is set in `.env`.
+- **Model Download**: On first run, the system will download the `sentence-transformers` model (~100MB).
 
 ---
-**Version:** 2.0.0 (Principal MVP Refactor)
-**Author:** Antigravity (Google DeepMind)
+*Developed for Zedny MVP.*

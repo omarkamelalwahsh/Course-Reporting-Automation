@@ -7,13 +7,7 @@ from src.ai.embeddings import EmbeddingService
 from src.ai.gating import check_gating
 from src.ai.ranker import normalize_rank_1_10
 from src.utils import normalize_query, is_arabic
-from src.config import (
-    TOP_K_Candidates, 
-    SEMANTIC_THRESHOLD_ARABIC, 
-    SEMANTIC_THRESHOLD_GENERAL, 
-    SEMANTIC_THRESHOLD_GENERAL, 
-    SEMANTIC_THRESHOLD_RELAXED
-)
+from src.config import settings
 from src.ai.gating import extract_strong_keywords_regex, STRICT_TECH_KEYWORDS
 
 logger = setup_logger(__name__)
@@ -94,78 +88,98 @@ class CourseRecommenderPipeline:
         
         # Base Threshold Selection
         if is_ar:
-            current_threshold = SEMANTIC_THRESHOLD_ARABIC
+            current_threshold = settings.SEMANTIC_THRESHOLD_ARABIC
         else:
-            current_threshold = SEMANTIC_THRESHOLD_GENERAL
+            current_threshold = settings.SEMANTIC_THRESHOLD_GENERAL
             
         logger.info(f"Query: '{original_query}' | Norm: '{norm_query}' | Short: {is_short_query} | Threshold: {current_threshold}")
         
-        # 2. Embed Query
-        query_vector = self.embedding_service.encode(norm_query)
+        logger.info(f"Query: '{original_query}' | Norm: '{norm_query}' | Short: {is_short_query} | Threshold: {current_threshold}")
         
-        # 3. FAISS Search
-        D, I = self.index.search(query_vector, TOP_K_Candidates)
-        distances = D[0]
-        indices = I[0]
-        
-        # 4. Filtering Strategy (Try Strict first, fallback if needed)
-        
-        def filter_candidates(threshold_val):
-            candidates = []
-            for i, idx in enumerate(indices):
-                if idx == -1: continue 
-                
-                score = float(distances[i])
-                course = self.courses_df.iloc[idx].to_dict()
-                
-                # Check Metadata Filters FIRST (Category/Level)
-                if request.filters:
-                    if request.filters.get('level') and request.filters['level'] != "Any":
-                        if course.get('level') != request.filters['level']:
-                            continue
-                    if request.filters.get('category') and request.filters['category'] != "Any":
-                        if course.get('category') != request.filters['category']:
-                            continue
+        if self.embedding_service.can_encode:
+            # 2. Semantic Search Path
+            query_vector = self.embedding_service.encode(norm_query)
+            D, I = self.index.search(query_vector, settings.TOP_K_Candidates)
+            distances = D[0]
+            indices = I[0]
 
-                # Apply Intelligent Gating
+            # 4. Filtering Strategy
+            def filter_candidates(threshold_val):
+                candidates = []
+                for i, idx in enumerate(indices):
+                    if idx == -1: continue 
+                    
+                    score = float(distances[i])
+                    course = self.courses_df.iloc[idx].to_dict()
+                    
+                    if request.filters:
+                        if request.filters.get('level') and request.filters['level'] != "Any":
+                            if course.get('level') != request.filters['level']:
+                                continue
+                        if request.filters.get('category') and request.filters['category'] != "Any":
+                            if course.get('category') != request.filters['category']:
+                                continue
+
+                    is_valid, matched_kws = check_gating(
+                        course=course,
+                        score=score,
+                        normalized_query=norm_query,
+                        original_query=original_query,
+                        threshold=threshold_val,
+                        is_short_query=is_short_query
+                    )
+                    
+                    if is_valid:
+                        candidates.append({
+                            "title": course.get('title', ''),
+                            "url": course.get('url', f"{settings.COURSE_BASE_URL}/{course.get('course_id')}"), 
+                            "score": score,
+                            "description": course.get('description', ''),
+                            "skills": course.get('skills', ''),
+                            "category": course.get('category', 'General'),
+                            "level": course.get('level', 'All'),
+                            "matched_keywords": matched_kws,
+                            "why": [f"Keyword Matching" if score < 0.4 else "Semantic Match"]
+                        })
+                return candidates
+
+            valid_candidates = filter_candidates(current_threshold)
+            if len(valid_candidates) < 3 and not is_short_query:
+                logger.info("Low results, attempting relaxed threshold...")
+                valid_candidates = filter_candidates(settings.SEMANTIC_THRESHOLD_RELAXED)
+
+        else:
+            # Keyword Fallback Path (No Torch)
+            logger.info("Performing keyword-based fallback search...")
+            valid_candidates = []
+            dummy_score = 1.0 
+            
+            for idx, row in self.courses_df.iterrows():
+                course = row.to_dict()
                 is_valid, matched_kws = check_gating(
                     course=course,
-                    score=score,
+                    score=dummy_score,
                     normalized_query=norm_query,
                     original_query=original_query,
-                    threshold=threshold_val,
+                    threshold=0.0, 
                     is_short_query=is_short_query
                 )
                 
-                if is_valid:
-                    # Enrich Data
-                    title = course.get('title', '') or ""
-                    desc = course.get('description', '') or ""
-                    skills = course.get('skills', '') or ""
-                    
-                    why_reasons = []
-                    if matched_kws:
-                        why_reasons.append(f"Contains: {', '.join(matched_kws[:3])}")
-                    if score > 0.6:
-                        why_reasons.append("High Semantic Match")
-                    elif score > 0.4:
-                        why_reasons.append("Moderate Match")
-                    
-                    candidates.append({
-                        "title": title,
-                        "url": course.get('url', f"https://zedny.com/course/{course.get('course_id')}"), 
-                        "score": score,
-                        "description": desc,
-                        "skills": skills,
+                if is_valid and matched_kws:
+                    valid_candidates.append({
+                        "title": course.get('title', ''),
+                        "url": course.get('url', f"{settings.COURSE_BASE_URL}/{course.get('course_id')}"), 
+                        "score": 0.5, 
+                        "description": course.get('description', ''),
+                        "skills": course.get('skills', ''),
                         "category": course.get('category', 'General'),
                         "level": course.get('level', 'All'),
                         "matched_keywords": matched_kws,
-                        "why": why_reasons
+                        "why": [f"Keyword Match: {', '.join(matched_kws[:2])}"]
                     })
-            return candidates
-
-        # Attempt 1: Standard/Strict
-        valid_candidates = filter_candidates(current_threshold)
+                
+                if len(valid_candidates) >= settings.TOP_K_Candidates:
+                    break
         
         # Attempt 2: Fallback (Relaxed) if results are too low (< 3)
         if len(valid_candidates) < 3 and not is_short_query:

@@ -2,7 +2,7 @@ import logging
 import sys
 import json
 from datetime import datetime
-from src.config import LOG_LEVEL
+from src.config import settings
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -20,7 +20,7 @@ class JSONFormatter(logging.Formatter):
 
 def setup_logger(name: str = "zedny_recommender"):
     logger = logging.getLogger(name)
-    logger.setLevel(LOG_LEVEL)
+    logger.setLevel(settings.LOG_LEVEL)
     
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)

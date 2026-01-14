@@ -1,14 +1,9 @@
 import re
 from typing import List, Dict, Any, Tuple
 from src.utils import is_arabic
-from src.config import (
-    SEMANTIC_THRESHOLD_ARABIC, 
-    SEMANTIC_THRESHOLD_GENERAL, 
-    SEMANTIC_THRESHOLD_RELAXED
-)
+from src.config import settings
 
 # Defined Tech Keywords for STRICT Enforcement
-# If any of these appear in the query, we MUST match them in the course regardless of query length.
 STRICT_TECH_KEYWORDS = {
     'python', 'java', 'c#', 'c++', 'javascript', 'php', 'ruby', 'swift', 'kotlin', 'dart', 
     'rust', 'golang', 'sql', 'flutter', 'react', 'angular', 'vue', 'django', 'flask', 
@@ -44,13 +39,15 @@ def check_gating(
     score: float, 
     normalized_query: str,
     original_query: str,
-    threshold: float = SEMANTIC_THRESHOLD_GENERAL,
+    threshold: float = None,
     is_short_query: bool = False
 ) -> Tuple[bool, List[str]]:
     """
     Decides if a course is valid.
     Returns: (is_valid, list_of_matched_keywords)
     """
+    if threshold is None:
+        threshold = settings.SEMANTIC_THRESHOLD_GENERAL
     
     # 1. Base Score Check
     if score < threshold:
